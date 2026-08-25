@@ -13,75 +13,77 @@ from .metrics import MetricsReport
 
 def render_report(metrics: MetricsReport) -> str:
     lines = []
-    lines.append("# Day 08 Lab Report")
+    lines.append("# Báo cáo Lab 08")
     lines.append("")
-    lines.append("## 1. Team / student")
-    lines.append("- Name: Viet (Student)")
+    lines.append("## 1. Thông tin sinh viên")
+    lines.append("- Họ và tên: Phạm Tuấn Việt")
+    lines.append("- MSSV: 2A202601987")
     lines.append("- Repo/commit: phase2-k3-4-track3-day8-langgraph-agent")
-    lines.append("- Date: 2026-08-25")
+    lines.append("- Ngày: 2026-08-25")
     lines.append("")
-    lines.append("## 2. Architecture")
-    lines.append("Graph nodes (11): intake, classify, tool, evaluate, answer, clarify, risky_action, approval, retry, dead_letter, finalize.")  # noqa: E501
+    lines.append("## 2. Kiến trúc")
+    lines.append("Graph nodes (11): intake, classify, tool, evaluate, answer, clarify, risky_action, approval, retry, dead_letter, finalize.")
     lines.append("")
-    lines.append("**Fixed Edges:**")
+    lines.append("**Các cạnh cố định (Fixed Edges):**")
     lines.append("- START -> intake -> classify")
     lines.append("- tool -> evaluate")
     lines.append("- risky_action -> approval")
     lines.append("- answer, clarify, dead_letter -> finalize -> END")
     lines.append("")
-    lines.append("**Conditional Edges (Routing):**")
-    lines.append("- **classify**: routes to `answer` (simple), `tool` (tool), `clarify` (missing_info), `risky_action` (risky), or `retry` (error).")  # noqa: E501
-    lines.append("- **evaluate**: routes to `retry` if needs_retry, else `answer`.")
-    lines.append("- **retry**: routes to `tool` if attempt < max_attempts, else `dead_letter`.")
-    lines.append("- **approval**: routes to `tool` if approved, else `clarify`.")
+    lines.append("**Các cạnh có điều kiện (Conditional Edges - Routing):**")
+    lines.append("- **classify**: điều hướng đến `answer` (simple), `tool` (tool), `clarify` (missing_info), `risky_action` (risky), hoặc `retry` (error).")
+    lines.append("- **evaluate**: điều hướng đến `retry` nếu needs_retry, ngược lại đến `answer`.")
+    lines.append("- **retry**: điều hướng đến `tool` nếu attempt < max_attempts, ngược lại đến `dead_letter`.")
+    lines.append("- **approval**: điều hướng đến `tool` nếu được duyệt (approved), ngược lại đến `clarify`.")
     lines.append("")
-    lines.append("## 3. State schema")
-    lines.append("| Field | Reducer | Why |")
+    lines.append("## 3. Schema trạng thái (State schema)")
+    lines.append("| Trường (Field) | Reducer | Lý do |")
     lines.append("|---|---|---|")
-    lines.append("| `messages`, `events`, `tool_results`, `errors` | append | Keeps an audit trail of conversation, system events, tool outputs, and exceptions without losing history. |")  # noqa: E501
-    lines.append("| `route`, `risk_level`, `attempt`, `evaluation_result`, `approval`, `final_answer`, etc. | overwrite | These represent the *current* state of execution and are used for fast routing/decision-making. |")  # noqa: E501
+    lines.append("| `messages`, `events`, `tool_results`, `errors` | append | Lưu giữ vết kiểm toán (audit trail) của các đoạn hội thoại, sự kiện hệ thống, output của tool và lỗi mà không bị mất lịch sử. |")
+    lines.append("| `route`, `risk_level`, `attempt`, `evaluation_result`, `approval`, `final_answer`, v.v. | overwrite | Đại diện cho trạng thái *hiện tại* của execution và được dùng để ra quyết định / định tuyến (routing) nhanh chóng. |")
     lines.append("")
-    lines.append("## 4. Scenario results")
-    lines.append(f"**Total Scenarios:** {metrics.total_scenarios} | **Success Rate:** {metrics.success_rate:.2%} | **Total Retries:** {metrics.total_retries} | **Total Interrupts:** {metrics.total_interrupts}")  # noqa: E501
+    lines.append("## 4. Kết quả Scenario")
+    lines.append(f"**Tổng số Scenario:** {metrics.total_scenarios} | **Tỷ lệ thành công:** {metrics.success_rate:.2%} | **Tổng Retry:** {metrics.total_retries} | **Tổng ngắt quãng (Interrupts):** {metrics.total_interrupts}")
     lines.append("")
-    lines.append("| Scenario | Expected route | Actual route | Success | Retries | Interrupts |")
+    lines.append("| Scenario | Route dự kiến | Route thực tế | Thành công | Retries | Interrupts |")
     lines.append("|---|---|---|---:|---:|---:|")
     for s in metrics.scenario_metrics:
-        success = "Yes" if s.success else "No"
-        lines.append(f"| {s.scenario_id} | {s.expected_route} | {s.actual_route} | {success} | {s.retry_count} | {s.interrupt_count} |")  # noqa: E501
-
+        success = "Có" if s.success else "Không"
+        lines.append(f"| {s.scenario_id} | {s.expected_route} | {s.actual_route} | {success} | {s.retry_count} | {s.interrupt_count} |")
+    
     lines.append("")
-    lines.append("## 5. Failure analysis")
-    lines.append("1. **Tool failure leading to bounded retry / dead-letter:**")
-    lines.append("   - **Starts at:** Tool encounters an error (e.g. timeout).")
-    lines.append("   - **Signals:** The `evaluate` node detects 'ERROR' in `tool_results[-1]` and sets `evaluation_result = 'needs_retry'`.")  # noqa: E501
-    lines.append("   - **Next graph step:** Routed to the `retry` node, which increments the `attempt` counter.")  # noqa: E501
-    lines.append("   - **Termination guarantee:** The routing function after `retry` checks if `attempt < max_attempts`. If limit is reached, it routes to `dead_letter` -> `finalize` -> `END`, preventing infinite loops.")  # noqa: E501
-    lines.append("   - **Limitations:** If the tool hangs indefinitely without timing out, the graph execution could stall. Timeouts must be implemented at the tool level.")  # noqa: E501
+    lines.append("## 5. Phân tích lỗi (Failure analysis)")
+    lines.append("1. **Lỗi Tool dẫn đến giới hạn retry / dead-letter:**")
+    lines.append("   - **Bắt đầu tại:** Tool gặp lỗi (ví dụ: timeout).")
+    lines.append("   - **Tín hiệu phát hiện:** Node `evaluate` đọc thấy chữ 'ERROR' trong `tool_results[-1]` và set `evaluation_result = 'needs_retry'`.")
+    lines.append("   - **Bước tiếp theo của Graph:** Chuyển hướng tới node `retry`, node này sẽ tăng biến đếm `attempt` lên 1.")
+    lines.append("   - **Đảm bảo kết thúc (Termination):** Routing function sau node `retry` sẽ kiểm tra `attempt < max_attempts`. Nếu chạm giới hạn, nó sẽ chuyển sang `dead_letter` -> `finalize` -> `END`, giúp tránh bị lặp vô hạn.")
+    lines.append("   - **Giới hạn (Limitations):** Nếu tool bị treo vô thời hạn mà không văng timeout, quá trình thực thi graph có thể bị kẹt. Cần phải cài đặt timeout ở tầng thực thi tool.")
     lines.append("")
-    lines.append("2. **Risky action rejected:**")
-    lines.append("   - **Starts at:** LLM classifies user query as `risky` (e.g. 'Delete customer account').")  # noqa: E501
-    lines.append("   - **Signals:** Routed to `risky_action` then `approval`. If a human reviewer rejects it, `approval.approved` becomes `False`.")  # noqa: E501
-    lines.append("   - **Next graph step:** The approval router sees the rejection and routes to `clarify`.")  # noqa: E501
-    lines.append("   - **Termination guarantee:** The `clarify` node creates a pending question and routes to `finalize` -> `END`. The tool is completely bypassed, containing the residual risk.")  # noqa: E501
-    lines.append("   - **Limitations:** A real-world rejection might need to specify *why* it was rejected to the user via multi-turn conversation.")  # noqa: E501
+    lines.append("2. **Hành động rủi ro bị từ chối:**")
+    lines.append("   - **Bắt đầu tại:** LLM phân loại câu hỏi của người dùng là `risky` (ví dụ: 'Xoá tài khoản khách hàng').")
+    lines.append("   - **Tín hiệu phát hiện:** Điều hướng qua `risky_action` rồi đến `approval`. Nếu người duyệt từ chối, `approval.approved` sẽ trở thành `False`.")
+    lines.append("   - **Bước tiếp theo của Graph:** Node router tại approval nhận thấy bị từ chối và điều hướng sang `clarify`.")
+    lines.append("   - **Đảm bảo kết thúc (Termination):** Node `clarify` tạo ra một câu hỏi chờ phản hồi và điều hướng đến `finalize` -> `END`. Tool bị bypass hoàn toàn, giúp kiểm soát rủi ro triệt để.")
+    lines.append("   - **Giới hạn (Limitations):** Trong thực tế, việc từ chối có thể cần phải giải thích rõ *lý do* cho người dùng thông qua hội thoại đa lượt (multi-turn conversation).")
     lines.append("")
-    lines.append("## 6. Persistence / recovery evidence")
-    lines.append("Implemented SQLite checkpointer (`SqliteSaver`) with WAL mode enabled (`PRAGMA journal_mode=WAL`). State is segmented per scenario by passing `{\"configurable\": {\"thread_id\": state[\"thread_id\"]}}` to `graph.invoke()`. This creates `checkpoints.db` which stores all graph steps durably. If the process crashes during a long-running tool, invoking the graph again with the same `thread_id` will resume precisely from the last successful node without duplicating prior work.")  # noqa: E501
+    lines.append("## 6. Minh chứng Persistance / Recovery")
+    lines.append("Đã cài đặt SQLite checkpointer (`SqliteSaver`) và bật chế độ WAL (`PRAGMA journal_mode=WAL`). Trạng thái (state) được phân tách theo từng scenario thông qua việc truyền `{\"configurable\": {\"thread_id\": state[\"thread_id\"]}}` vào `graph.invoke()`. Thao tác này tạo ra file `checkpoints.db` để lưu trữ bền vững tất cả các bước của đồ thị.")
+    lines.append("Nếu một tool chạy quá lâu khiến process bị crash, khi gọi lại graph với cùng `thread_id` đó, graph sẽ tiếp tục chạy từ đúng node thành công cuối cùng mà không bị lặp lại công việc trước đó.")
     lines.append("")
-    lines.append("**Evidence (Log Output):**")
+    lines.append("**Minh chứng (Log Output):**")
     lines.append("```bash")
     lines.append("$ ls -lh checkpoints.db")
     lines.append("-rw-r--r-- 1 viet viet 584K Aug 25 12:01 checkpoints.db")
     lines.append("```")
-    lines.append("The presence and size of `checkpoints.db` confirms that graph states are being successfully written to disk by `SqliteSaver`.")
+    lines.append("Việc có mặt file `checkpoints.db` khẳng định rằng state của graph đã được `SqliteSaver` ghi chép thành công xuống ổ đĩa.")
     lines.append("")
-    lines.append("## 7. Extension work")
-    lines.append("- **SQLite Persistence:** Successfully implemented `SqliteSaver` in `persistence.py` to persist graphs to disk.")  # noqa: E501
-    lines.append("- **Bounded Retry:** Successfully implemented the `attempt` counter loop that fails-closed to a `dead_letter` node.")  # noqa: E501
+    lines.append("## 7. Các tính năng mở rộng (Extension work)")
+    lines.append("- **SQLite Persistence:** Cài đặt thành công `SqliteSaver` trong `persistence.py` để lưu trạng thái đồ thị xuống ổ đĩa.")
+    lines.append("- **Bounded Retry:** Triển khai thành công bộ đếm `attempt` kèm vòng lặp fail-closed đi tới node `dead_letter`.")
     lines.append("")
-    lines.append("## 8. Improvement plan")
-    lines.append("If I had one more day, I would prioritize **Productionizing Human-in-the-loop (HITL)**. Currently, the `approval_node` mocks a reviewer's decision. I would remove the mock and configure `interrupt_before=[\"approval\"]` in the graph compiler. This would pause execution dynamically, wait for a real API/webhook callback to update the graph state with the human's verdict, and then safely resume.")  # noqa: E501
+    lines.append("## 8. Kế hoạch cải tiến (Improvement plan)")
+    lines.append("Nếu có thêm thời gian, ưu tiên tiếp theo để đưa lên production sẽ là **Human-in-the-loop (HITL) thực sự**. Hiện tại, `approval_node` đang mock quyết định của người duyệt. Tôi sẽ gỡ bỏ mock và cấu hình `interrupt_before=[\"approval\"]` trong phần biên dịch (compile) graph. Điều này sẽ tạm dừng luồng thực thi, chờ một callback API/webhook cập nhật quyết định của người thật vào graph state, và sau đó mới tiếp tục chạy.")
 
     return "\n".join(lines)
 
