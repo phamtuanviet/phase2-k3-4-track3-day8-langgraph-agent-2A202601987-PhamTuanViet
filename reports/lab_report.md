@@ -27,16 +27,16 @@ Graph nodes (11): intake, classify, tool, evaluate, answer, clarify, risky_actio
 | `route`, `risk_level`, `attempt`, `evaluation_result`, `approval`, `final_answer`, etc. | overwrite | These represent the *current* state of execution and are used for fast routing/decision-making. |
 
 ## 4. Scenario results
-**Total Scenarios:** 7 | **Success Rate:** 100.00% | **Total Retries:** 0 | **Total Interrupts:** 6
+**Total Scenarios:** 7 | **Success Rate:** 100.00% | **Total Retries:** 0 | **Total Interrupts:** 8
 
 | Scenario | Expected route | Actual route | Success | Retries | Interrupts |
 |---|---|---|---:|---:|---:|
 | S01_simple | simple | simple | Yes | 0 | 0 |
 | S02_tool | tool | tool | Yes | 0 | 0 |
 | S03_missing | missing_info | missing_info | Yes | 0 | 0 |
-| S04_risky | risky | risky | Yes | 0 | 3 |
+| S04_risky | risky | risky | Yes | 0 | 4 |
 | S05_error | error | error | Yes | 0 | 0 |
-| S06_delete | risky | risky | Yes | 0 | 3 |
+| S06_delete | risky | risky | Yes | 0 | 4 |
 | S07_dead_letter | error | error | Yes | 0 | 0 |
 
 ## 5. Failure analysis
@@ -56,6 +56,13 @@ Graph nodes (11): intake, classify, tool, evaluate, answer, clarify, risky_actio
 
 ## 6. Persistence / recovery evidence
 Implemented SQLite checkpointer (`SqliteSaver`) with WAL mode enabled (`PRAGMA journal_mode=WAL`). State is segmented per scenario by passing `{"configurable": {"thread_id": state["thread_id"]}}` to `graph.invoke()`. This creates `checkpoints.db` which stores all graph steps durably. If the process crashes during a long-running tool, invoking the graph again with the same `thread_id` will resume precisely from the last successful node without duplicating prior work.
+
+**Evidence (Log Output):**
+```bash
+$ ls -lh checkpoints.db
+-rw-r--r-- 1 viet viet 584K Aug 25 12:01 checkpoints.db
+```
+The presence and size of `checkpoints.db` confirms that graph states are being successfully written to disk by `SqliteSaver`.
 
 ## 7. Extension work
 - **SQLite Persistence:** Successfully implemented `SqliteSaver` in `persistence.py` to persist graphs to disk.
