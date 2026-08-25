@@ -1,3 +1,6 @@
+from langgraph_agent_lab.graph import build_graph  # noqa: I001
+from langgraph_agent_lab.persistence import build_checkpointer
+from langgraph_agent_lab.state import Route, Scenario, initial_state
 """Graph smoke tests.
 
 These tests verify end-to-end graph execution. They will fail with NotImplementedError
@@ -7,10 +10,10 @@ Note: These tests require a configured LLM (OPENAI_API_KEY or ANTHROPIC_API_KEY)
 because classify_node and answer_node use real LLM calls.
 """
 
-import importlib.util
-import os
+import importlib.util  # noqa: E402
+import os  # noqa: E402
 
-import pytest
+import pytest  # noqa: E402
 
 pytestmark = [
     pytest.mark.skipif(
@@ -18,14 +21,12 @@ pytestmark = [
         reason="langgraph not installed",
     ),
     pytest.mark.skipif(
-        not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"),
-        reason="No LLM API key configured (set GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY)",
+        not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENAI_API_KEY") and not os.getenv("ANTHROPIC_API_KEY"),  # noqa: E501
+        reason="No LLM API key configured (set GEMINI_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY)",  # noqa: E501
     ),
 ]
 
-from langgraph_agent_lab.graph import build_graph
-from langgraph_agent_lab.persistence import build_checkpointer
-from langgraph_agent_lab.state import Route, Scenario, initial_state
+
 
 
 @pytest.mark.parametrize(
@@ -38,7 +39,7 @@ from langgraph_agent_lab.state import Route, Scenario, initial_state
         ("Timeout failure while processing", Route.ERROR.value),
     ],
 )
-def test_graph_runs_and_routes_correctly(query, expected_route):
+def test_graph_runs_and_routes_correctly(query: str, expected_route: str) -> None:
     graph = build_graph(checkpointer=build_checkpointer("memory"))
     scenario = Scenario(id="smoke", query=query, expected_route=Route(expected_route))
     state = initial_state(scenario)
@@ -47,7 +48,7 @@ def test_graph_runs_and_routes_correctly(query, expected_route):
     assert result.get("final_answer") or result.get("pending_question")
 
 
-def test_graph_terminates_all_routes():
+def test_graph_terminates_all_routes() -> None:
     """Verify every route reaches finalize node."""
     graph = build_graph(checkpointer=build_checkpointer("memory"))
     queries = [

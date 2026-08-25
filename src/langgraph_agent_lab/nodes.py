@@ -29,139 +29,181 @@ def intake_node(state: AgentState) -> dict:
 
 
 def classify_node(state: AgentState) -> dict:
-    """Classify the query into a route using an LLM.
+    from pydantic import BaseModel, Field
 
-    *** MUST use a real LLM call — keyword-only heuristics will lose points. ***
+    from .llm import get_llm
 
-    Use .with_structured_output() or equivalent to get reliable enum classification.
-    The LLM should classify into one of: simple, tool, missing_info, risky, error.
+    class Classification(BaseModel):
+        route: str = Field(description="Must be one of: simple, tool, missing_info, risky, error.")
 
-    Hints:
-    - See llm.py for the get_llm() helper
-    - Use Pydantic model or TypedDict with .with_structured_output()
-    - Set risk_level to "high" for risky routes, "low" otherwise
-    - Priority guide: risky > tool > missing_info > error > simple
+    query = state.get("query", "")
+    prompt = (
+        "Classify the following user query into one of the following intents (routes):\n"
+        "1. risky: Requires human approval or is dangerous. Examples: Refund money, delete account, destructive actions.\n"  # noqa: E501
+        "2. tool: Requires calling a tool to fetch info or perform an action. Example: Lookup order status.\n"  # noqa: E501
+        "3. missing_info: Vague or incomplete query needing clarification. Example: Can you fix it?\n"  # noqa: E501
+        "4. error: A problem occurred or user explicitly asks for an error. Example: Timeout failure, system failure.\n"  # noqa: E501
+        "5. simple: A simple greeting or question that needs no tools. Examples: How do I reset my password?, Hello.\n"  # noqa: E501
+        "Priority guide: risky > tool > missing_info > error > simple.\n\n"
+        f"Query: {query}"
+    )
 
-    Return: {"route": str, "risk_level": str, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement LLM-based classification")
+    try:
+        decision = get_llm().with_structured_output(Classification).invoke(prompt)
+        route = decision.route
+        if route not in ["simple", "tool", "missing_info", "risky", "error"]:
+            route = "simple"
+    except Exception as e:
+        return {
+            "route": "error",
+            "risk_level": "low",
+            "errors": [f"LLM classification failed: {str(e)}"],
+            "events": [make_event("classify", "failed", "Fallback to error due to exception")]
+        }
+
+    risk_level = "high" if route == "risky" else "low"
+    return {
+        "route": route,
+        "risk_level": risk_level,
+        "events": [make_event("classify", "completed", f"route={route}, risk={risk_level}")]
+    }
 
 
 def tool_node(state: AgentState) -> dict:
-    """Execute a mock tool call.
+    route = state.get("route", "")
+    attempt = state.get("attempt", 0)
 
-    Simulate transient failures for error-route scenarios to test retry loops.
+    if route == "error" and attempt < 2:
+        result = "ERROR: Transient failure occurred during tool execution."
+    else:
+        result = "Success: Tool executed normally."
 
-    Requirements:
-    - Read current attempt count from state
-    - If route is "error" and attempt < 2: return error result (string containing "ERROR")
-    - Otherwise: return a mock success result string
-    - Append result to tool_results list
-
-    Return: {"tool_results": [result_string], "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement mock tool with error simulation")
+    return {
+        "tool_results": [result],
+        "events": [make_event("tool", "completed", f"Executed mock tool (attempt {attempt})")]
+    }
 
 
 def evaluate_node(state: AgentState) -> dict:
-    """Evaluate tool results — the retry-loop gate.
+    tool_results = state.get("tool_results", [])
+    if not tool_results:
+        result = "success"
+    else:
+        latest = tool_results[-1]
+        if "ERROR" in latest:
+            result = "needs_retry"
+        else:
+            result = "success"
 
-    Check whether the latest tool result is satisfactory or needs retry.
-
-    SHOULD use LLM-as-judge for bonus points. Heuristic (e.g., check for "ERROR" substring)
-    is acceptable for base score.
-
-    Requirements:
-    - Read the latest entry from tool_results
-    - Set evaluation_result to "needs_retry" or "success"
-    - This field drives route_after_evaluate conditional edge
-
-    Note: You may need to add 'evaluation_result' to AgentState if not present.
-
-    Return: {"evaluation_result": str, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement tool result evaluation")
+    return {
+        "evaluation_result": result,
+        "events": [make_event("evaluate", "completed", f"Evaluation verdict: {result}")]
+    }
 
 
 def answer_node(state: AgentState) -> dict:
-    """Generate a final response using an LLM.
+    from .llm import get_llm
+    query = state.get("query", "")
+    tool_results = state.get("tool_results", [])
+    approval = state.get("approval", {})
+    proposed_action = state.get("proposed_action", "")
 
-    *** MUST use a real LLM call — hardcoded strings will lose points. ***
+    context = []
+    if tool_results:
+        context.append(f"Tool results: {tool_results[-1]}")
+    if proposed_action:
+        context.append(f"Proposed action: {proposed_action}")
+    if approval:
+        context.append(f"Approval status: {approval.get('approved')}, Reviewer: {approval.get('reviewer')}")  # noqa: E501
 
-    The LLM should generate a helpful response grounded in available context:
-    - tool_results (if any)
-    - approval decision (if risky route)
-    - original query
+    prompt = (
+        "Answer the user's query based strictly on the provided context.\n"
+        "If the context is insufficient, explicitly state that.\n\n"
+        f"Query: {query}\n"
+        f"Context: {' | '.join(context)}\n"
+    )
 
-    Return: {"final_answer": str, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement LLM-grounded answer generation")
+    try:
+        response = get_llm().invoke(prompt).content
+        return {
+            "final_answer": str(response),
+            "events": [make_event("answer", "completed", "Answer generated successfully")]
+        }
+    except Exception as e:
+        return {
+            "final_answer": "Sorry, an error occurred while generating the answer.",
+            "errors": [f"LLM Error: {str(e)}"],
+            "events": [make_event("answer", "failed", "Answer generation failed")]
+        }
 
 
 def ask_clarification_node(state: AgentState) -> dict:
-    """Ask for missing information instead of hallucinating.
+    query = state.get("query", "")
+    approval = state.get("approval", {})
 
-    Generate a specific clarification question based on the vague/incomplete query.
+    if approval and not approval.get("approved"):
+        question = f"Your requested action was rejected (Reason: {approval.get('comment')}). What would you like to do instead?"  # noqa: E501
+    else:
+        question = f"Your query '{query}' is unclear. Could you provide more details?"
 
-    Note: You may need to add 'pending_question' to AgentState if not present.
-
-    Return: {"pending_question": str, "final_answer": str, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement clarification request")
+    return {
+        "pending_question": question,
+        "final_answer": question,
+        "events": [make_event("ask_clarification", "completed", "Clarification requested")]
+    }
 
 
 def risky_action_node(state: AgentState) -> dict:
-    """Prepare a risky action for human approval.
+    query = state.get("query", "")
+    risk_level = state.get("risk_level", "high")
 
-    Describe the proposed action and why it requires approval.
+    action = f"Execute side effect for query: '{query}' with risk level: {risk_level}"
 
-    Note: You may need to add 'proposed_action' to AgentState if not present.
-
-    Return: {"proposed_action": str, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement risky action preparation")
+    return {
+        "proposed_action": action,
+        "events": [make_event("risky_action", "completed", "Proposed risky action")]
+    }
 
 
 def approval_node(state: AgentState) -> dict:
-    """Human-in-the-loop approval step.
+    decision = {
+        "approved": True,
+        "reviewer": "mock-reviewer",
+        "comment": "Auto-approved by default"
+    }
 
-    Default behavior: mock approval (approved=True) so tests and CI run offline.
-    Extension: if env LANGGRAPH_INTERRUPT=true, use langgraph.types.interrupt() for real HITL.
-
-    Return: {"approval": {"approved": bool, "reviewer": str, "comment": str}, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement approval with mock default")
+    return {
+        "approval": decision,
+        "events": [make_event("approval", "completed", "Approval decision recorded")]
+    }
 
 
 def retry_or_fallback_node(state: AgentState) -> dict:
-    """Record a retry attempt.
+    attempt = state.get("attempt", 0)
+    new_attempt = attempt + 1
 
-    Increment the attempt counter and log the transient failure.
+    tool_results = state.get("tool_results", [])
+    error_msg = tool_results[-1] if tool_results else "Unknown error"
 
-    Requirements:
-    - Read current attempt from state, increment by 1
-    - Add an error message to errors list
-    - Return updated attempt count
-
-    Return: {"attempt": int, "errors": [str], "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement retry with attempt tracking")
+    return {
+        "attempt": new_attempt,
+        "errors": [f"Retry #{new_attempt} due to: {error_msg}"],
+        "events": [make_event("retry_or_fallback", "completed", f"Retrying, attempt {new_attempt}")]
+    }
 
 
 def dead_letter_node(state: AgentState) -> dict:
-    """Handle unresolvable failures after max retries exceeded.
+    attempt = state.get("attempt", 0)
 
-    This is the third layer: retry → fallback → dead letter.
-    Log the failure and set a final_answer explaining that the request could not be completed.
+    msg = f"Failed to complete the request after {attempt} attempts."
 
-    Return: {"final_answer": str, "events": [make_event(...)]}
-    """
-    raise NotImplementedError("TODO(student): implement dead letter handling")
+    return {
+        "final_answer": msg,
+        "events": [make_event("dead_letter", "completed", "Exhausted retries")]
+    }
 
 
 def finalize_node(state: AgentState) -> dict:
-    """Emit a final audit event. All routes must pass through here before END.
-
-    Return: {"events": [make_event("finalize", "completed", "workflow finished")]}
-    """
-    raise NotImplementedError("TODO(student): implement finalize node")
+    return {
+        "events": [make_event("finalize", "completed", "workflow finished")]
+    }
